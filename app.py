@@ -10,41 +10,50 @@ def health():
 
 @app.post("/extract_h1")
 def extract_h1():
-    data = request.get_json(silent=True) or {}
-    urls = data.get("urls") or []
-    if not isinstance(urls, list):
-        return jsonify({"error": "urls must be a list"}), 400
+    try:
+        data = request.get_json(silent=True) or {}
+        urls = data.get("urls") or []
+        if not isinstance(urls, list):
+            return jsonify({"error": "urls must be a list"}), 400
 
-    results = []
-    session = requests.Session()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; MedReviewsBot/1.0)"
-    }
+        results = []
+        session = requests.Session()
+        headers = {"User-Agent": "Mozilla/5.0 (compatible; MedReviewsBot/1.0)"}
 
-    for url in urls[:100]:  # הגנה בסיסית
-        u = str(url).strip()
-        if not u:
-            continue
+        for url in urls[:100]:  # הגנה בסיסית
+            u = str(url).strip()
+            if not u:
+                continue
 
-        try:
-            r = session.get(u, headers=headers, timeout=20, allow_redirects=True)
-            r.raise_for_status()
+            try:
+                r = session.get(u, headers=headers, timeout=20, allow_redirects=True)
+                r.raise_for_status()
 
-            soup = BeautifulSoup(r.text, "html.parser")
-            h1_tag = soup.find("h1")
-            h1 = h1_tag.get_text(" ", strip=True) if h1_tag else ""
+                soup = BeautifulSoup(r.text, "html.parser")
+                h1_tag = soup.find("h1")
+                h1 = h1_tag.get_text(" ", strip=True) if h1_tag else ""
 
-            results.append({
-                "url": u,
-                "ok": True,
-                "status_code": r.status_code,
-                "h1_raw": h1
-            })
-        except Exception as e:
-            results.append({
-                "url": u,
-                "ok": False,
-                "error": str(e)
-            })
+                results.append({
+                    "url": u,
+                    "ok": True,
+                    "status_code": r.status_code,
+                    "h1_raw": h1
+                })
+            except Exception as e:
+                results.append({
+                    "url": u,
+                    "ok": False,
+                    "error": str(e)
+                })
+
+        return jsonify({"results": results})
+
+    except Exception as e:
+        # שגיאה "גלובלית" שמפילה את כל הבקשה: נחזיר JSON ברור וגם לוג
+        import traceback
+        tb = traceback.format_exc()
+        print("extract_h1 crashed:", tb)
+        return jsonify({"error": "extract_h1 crashed", "detail": str(e)}), 500
 
     return jsonify({"results": results})
+
