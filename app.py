@@ -10,6 +10,19 @@ def health():
 
 @app.post("/extract_h1")
 def extract_h1():
+    import re
+    import traceback
+
+    H1_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
+
+    def extract_h1_fast(html: str) -> str:
+        m = H1_RE.search(html)
+        if not m:
+            return ""
+        txt = re.sub(r"<[^>]+>", " ", m.group(1))
+        txt = re.sub(r"\s+", " ", txt).strip()
+        return txt
+
     try:
         data = request.get_json(silent=True) or {}
         urls = data.get("urls") or []
@@ -20,18 +33,37 @@ def extract_h1():
         session = requests.Session()
         headers = {"User-Agent": "Mozilla/5.0 (compatible; MedReviewsBot/1.0)"}
 
-        for url in urls[:100]:  # הגנה בסיסית
+        for url in urls[:100]:
             u = str(url).strip()
             if not u:
                 continue
 
             try:
-                r = session.get(u, headers=headers, timeout=20, allow_redirects=True)
+                r = session.get(
+                    u,
+                    headers=headers,
+                    timeout=20,
+                    allow_redirects=True,
+                    stream=True
+                )
                 r.raise_for_status()
 
-                soup = BeautifulSoup(r.text, "html.parser")
-                h1_tag = soup.find("h1")
-                h1 = h1_tag.get_text(" ", strip=True) if h1_tag else ""
+                # קוראות רק את תחילת הדף כדי לחסוך זיכרון
+                max_bytes = 400_000
+                chunks = []
+                read = 0
+                for chunk in r.iter_content(chunk_size=16_384, decode_unicode=False):
+                    if not chunk:
+                        continue
+                    chunks.append(chunk)
+                    read += len(chunk)
+                    if read >= max_bytes:
+                        break
+
+                enc = r.encoding or "utf-8"
+                head_html = b"".join(chunks).decode(enc, errors="replace")
+
+                h1 = extract_h1_fast(head_html)
 
                 results.append({
                     "url": u,
@@ -39,6 +71,7 @@ def extract_h1():
                     "status_code": r.status_code,
                     "h1_raw": h1
                 })
+
             except Exception as e:
                 results.append({
                     "url": u,
@@ -49,11 +82,5 @@ def extract_h1():
         return jsonify({"results": results})
 
     except Exception as e:
-        # שגיאה "גלובלית" שמפילה את כל הבקשה: נחזיר JSON ברור וגם לוג
-        import traceback
-        tb = traceback.format_exc()
-        print("extract_h1 crashed:", tb)
+        print("extract_h1 crashed:", traceback.format_exc())
         return jsonify({"error": "extract_h1 crashed", "detail": str(e)}), 500
-
-    return jsonify({"results": results})
-
