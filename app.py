@@ -32,7 +32,13 @@ def extract_h1():
         session = requests.Session()
         headers = {"User-Agent": "Mozilla/5.0 (compatible; MedReviewsBot/1.0)"}
 
+        import time
+        DEADLINE = time.time() + 20  # עד 20 שניות לבקשה אחת
+
         for url in urls[:100]:
+            if time.time() > DEADLINE:
+                break
+
             u = str(url).strip()
             if not u:
                 continue
@@ -41,7 +47,7 @@ def extract_h1():
                 r = session.get(
                     u,
                     headers=headers,
-                    timeout=20,
+                    timeout=(5, 8)
                     allow_redirects=True,
                     stream=True
                 )
@@ -85,4 +91,5 @@ def extract_h1():
     except Exception as e:
         print("extract_h1 crashed:", traceback.format_exc())
         return jsonify({"error": "extract_h1 crashed", "detail": str(e)}), 500
+
 
