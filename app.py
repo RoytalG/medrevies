@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 import requests
-from bs4 import BeautifulSoup
 
 app = Flask(__name__)
 
@@ -60,6 +59,8 @@ def extract_h1():
                     if read >= max_bytes:
                         break
 
+                r.close()
+
                 enc = r.encoding or "utf-8"
                 head_html = b"".join(chunks).decode(enc, errors="replace")
 
@@ -84,3 +85,4 @@ def extract_h1():
     except Exception as e:
         print("extract_h1 crashed:", traceback.format_exc())
         return jsonify({"error": "extract_h1 crashed", "detail": str(e)}), 500
+
