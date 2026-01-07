@@ -47,7 +47,7 @@ def extract_h1():
                 r = session.get(
                     u,
                     headers=headers,
-                    timeout=(5, 8)
+                    timeout=(5, 8),
                     allow_redirects=True,
                     stream=True
                 )
@@ -91,5 +91,6 @@ def extract_h1():
     except Exception as e:
         print("extract_h1 crashed:", traceback.format_exc())
         return jsonify({"error": "extract_h1 crashed", "detail": str(e)}), 500
+
 
 
