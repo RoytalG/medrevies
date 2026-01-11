@@ -1,7 +1,12 @@
 from flask import Flask, request, jsonify
 import requests
+import os
+import json
+
+from openai import OpenAI
 
 app = Flask(__name__)
+client = OpenAI()  # קורא OPENAI_API_KEY מה-ENV
 
 @app.get("/health")
 def health():
@@ -93,4 +98,110 @@ def extract_h1():
         return jsonify({"error": "extract_h1 crashed", "detail": str(e)}), 500
 
 
+@app.post("/translate_batch")
+def translate_batch():
+    """
+    קלט:
+      {
+        "items": [
+          {"id": 123, "text": "Hello world", "lang": "en"},
+          ...
+        ]
+      }
 
+    פלט:
+      {
+        "results": [
+          {"id": 123, "ok": true, "he": "שלום עולם"},
+          {"id": 124, "ok": false, "error": "..."}
+        ]
+      }
+    """
+    import traceback
+
+    try:
+        data = request.get_json(silent=True) or {}
+        items = data.get("items") or []
+        if not isinstance(items, list):
+            return jsonify({"error": "items must be a list"}), 400
+
+        # ניקוי בסיסי והגבלת גודל באצ'
+        cleaned = []
+        for it in items[:100]:
+            if not isinstance(it, dict):
+                continue
+            _id = it.get("id")
+            txt = (it.get("text") or "").strip()
+            lang = (it.get("lang") or "").strip()
+            if _id is None or not txt:
+                continue
+            cleaned.append({"id": _id, "text": txt, "lang": lang})
+
+        if not cleaned:
+            return jsonify({"results": []})
+
+        # מבקשות מהמודל להחזיר JSON בלבד
+        instructions = (
+            "You are a professional medical-content translator.\n"
+            "Task: translate each input text to Hebrew (he).\n"
+            "Rules:\n"
+            "1) Return ONLY valid JSON, no prose.\n"
+            "2) Keep brand/proper names as-is when appropriate.\n"
+            "3) Preserve numbers and punctuation.\n"
+            "4) Keep it concise, natural Hebrew.\n"
+            "Output schema:\n"
+            "{\n"
+            '  "results": [\n'
+            '    {"id": <id>, "he": "<hebrew translation>"}\n'
+            "  ]\n"
+            "}\n"
+        )
+
+        payload = {
+            "items": cleaned
+        }
+
+        # מודל חסכוני לתרגום; אפשר לשנות ל-gpt-5 אם תרצי איכות מקסימלית
+        resp = client.responses.create(
+            model=os.getenv("OPENAI_TRANSLATE_MODEL", "gpt-5-mini"),
+            reasoning={"effort": "low"},
+            instructions=instructions,
+            input=json.dumps(payload, ensure_ascii=False),
+            max_output_tokens=1200
+        )
+
+        raw = resp.output_text or ""
+        raw = raw.strip()
+
+        # ניסיון פענוח JSON
+        parsed = None
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            # ניסיון חילוץ JSON אם המודל עטף בטקסט (נדיר, אבל קורה)
+            start = raw.find("{")
+            end = raw.rfind("}")
+            if start != -1 and end != -1 and end > start:
+                parsed = json.loads(raw[start:end + 1])
+
+        results_map = {}
+        for row in (parsed or {}).get("results", []):
+            try:
+                results_map[row["id"]] = row.get("he", "")
+            except Exception:
+                continue
+
+        out = []
+        for it in cleaned:
+            _id = it["id"]
+            he = (results_map.get(_id) or "").strip()
+            if he:
+                out.append({"id": _id, "ok": True, "he": he})
+            else:
+                out.append({"id": _id, "ok": False, "error": "missing_translation_in_model_output"})
+
+        return jsonify({"results": out})
+
+    except Exception as e:
+        print("translate_batch crashed:", traceback.format_exc())
+        return jsonify({"error": "translate_batch crashed", "detail": str(e)}), 500
