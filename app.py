@@ -97,25 +97,14 @@ def extract_h1():
         print("extract_h1 crashed:", traceback.format_exc())
         return jsonify({"error": "extract_h1 crashed", "detail": str(e)}), 500
 
-
 @app.post("/translate_batch")
 def translate_batch():
     """
     קלט:
-      {
-        "items": [
-          {"id": 123, "text": "Hello world", "lang": "en"},
-          ...
-        ]
-      }
+      {"items":[{"id":123,"text":"...","lang":"en"}, ...]}
 
     פלט:
-      {
-        "results": [
-          {"id": 123, "ok": true, "he": "שלום עולם"},
-          {"id": 124, "ok": false, "error": "..."}
-        ]
-      }
+      {"results":[{"id":123,"ok":true,"he":"..."}, ...]}
     """
     import traceback
 
@@ -125,7 +114,6 @@ def translate_batch():
         if not isinstance(items, list):
             return jsonify({"error": "items must be a list"}), 400
 
-        # ניקוי בסיסי והגבלת גודל באצ'
         cleaned = []
         for it in items[:100]:
             if not isinstance(it, dict):
@@ -140,68 +128,52 @@ def translate_batch():
         if not cleaned:
             return jsonify({"results": []})
 
-        # מבקשות מהמודל להחזיר JSON בלבד
+        # פרומפט קצר וברור, המודל מחויב ל-JSON דרך text.format
         instructions = (
-            "You are a professional medical-content translator.\n"
-            "Task: translate each input text to Hebrew (he).\n"
-            "Rules:\n"
-            "1) Return ONLY valid JSON, no prose.\n"
-            "2) Keep brand/proper names as-is when appropriate.\n"
-            "3) Preserve numbers and punctuation.\n"
-            "4) Keep it concise, natural Hebrew.\n"
-            "Output schema:\n"
-            "{\n"
-            '  "results": [\n'
-            '    {"id": <id>, "he": "<hebrew translation>"}\n'
-            "  ]\n"
-            "}\n"
+            "Translate each item.text into Hebrew.\n"
+            "Return ONLY JSON with this schema:\n"
+            '{ "results": [ { "id": <id>, "he": "<translation>" } ] }\n'
+            "Keep names/brands as-is when appropriate. Preserve numbers and punctuation."
         )
 
-        payload = {
-            "items": cleaned
-        }
-
-        # מודל חסכוני לתרגום; אפשר לשנות ל-gpt-5 אם תרצי איכות מקסימלית
         resp = client.responses.create(
-            model=os.getenv("OPENAI_TRANSLATE_MODEL", "gpt-5-mini"),
+            model=os.getenv("OPENAI_TRANSLATE_MODEL", "gpt-4o-mini"),
             reasoning={"effort": "low"},
             instructions=instructions,
-            input=json.dumps(payload, ensure_ascii=False),
-            max_output_tokens=1200
+            input={
+                "items": cleaned
+            },
+            # JSON mode ב-Responses: מבטיח שהטקסט המוחזר יהיה JSON תקין
+            text={"format": {"type": "json_object"}},
+            max_output_tokens=1500
         )
 
-        raw = resp.output_text or ""
-        raw = raw.strip()
+        raw = (resp.output_text or "").strip()
 
-        # ניסיון פענוח JSON
-        parsed = None
+        # לעולם לא להפיל 500 בגלל JSON לא תקין
         try:
-            parsed = json.loads(raw)
+            parsed = json.loads(raw) if raw else {}
         except Exception:
-            # ניסיון חילוץ JSON אם המודל עטף בטקסט (נדיר, אבל קורה)
-            start = raw.find("{")
-            end = raw.rfind("}")
-            if start != -1 and end != -1 and end > start:
-                parsed = json.loads(raw[start:end + 1])
+            parsed = {}
 
+        results_list = (parsed.get("results") if isinstance(parsed, dict) else None) or []
         results_map = {}
-        for row in (parsed or {}).get("results", []):
-            try:
-                results_map[row["id"]] = row.get("he", "")
-            except Exception:
-                continue
+        for row in results_list:
+            if isinstance(row, dict) and "id" in row:
+                results_map[row["id"]] = (row.get("he") or "").strip()
 
         out = []
         for it in cleaned:
             _id = it["id"]
-            he = (results_map.get(_id) or "").strip()
+            he = results_map.get(_id, "")
             if he:
                 out.append({"id": _id, "ok": True, "he": he})
             else:
-                out.append({"id": _id, "ok": False, "error": "missing_translation_in_model_output"})
+                out.append({"id": _id, "ok": False, "error": "missing_or_unparsed_translation"})
 
         return jsonify({"results": out})
 
     except Exception as e:
         print("translate_batch crashed:", traceback.format_exc())
         return jsonify({"error": "translate_batch crashed", "detail": str(e)}), 500
+
