@@ -139,7 +139,6 @@ def translate_batch():
 
         resp = client.responses.create(
             model=os.getenv("OPENAI_TRANSLATE_MODEL", "gpt-4o-mini"),
-            reasoning={"effort": "low"},
             instructions=instructions,
             input="JSON\n" + json.dumps({"items": cleaned}, ensure_ascii=False),
             text={"format": {"type": "json_object"}},
@@ -174,6 +173,7 @@ def translate_batch():
     except Exception as e:
         print("translate_batch crashed:", traceback.format_exc())
         return jsonify({"error": "translate_batch crashed", "detail": str(e)}), 500
+
 
 
 
