@@ -140,10 +140,7 @@ def translate_batch():
             model=os.getenv("OPENAI_TRANSLATE_MODEL", "gpt-4o-mini"),
             reasoning={"effort": "low"},
             instructions=instructions,
-            input={
-                "items": cleaned
-            },
-            # JSON mode ב-Responses: מבטיח שהטקסט המוחזר יהיה JSON תקין
+            input=json.dumps({"items": cleaned}, ensure_ascii=False),
             text={"format": {"type": "json_object"}},
             max_output_tokens=1500
         )
@@ -176,4 +173,5 @@ def translate_batch():
     except Exception as e:
         print("translate_batch crashed:", traceback.format_exc())
         return jsonify({"error": "translate_batch crashed", "detail": str(e)}), 500
+
 
