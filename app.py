@@ -133,7 +133,8 @@ def translate_batch():
             "Translate each item.text into Hebrew.\n"
             "Return ONLY JSON with this schema:\n"
             '{ "results": [ { "id": <id>, "he": "<translation>" } ] }\n'
-            "Keep names/brands as-is when appropriate. Preserve numbers and punctuation."
+            "Keep names/brands as-is when appropriate. Preserve numbers and punctuation.\n"
+            "Return a valid JSON object only."
         )
 
         resp = client.responses.create(
@@ -173,5 +174,6 @@ def translate_batch():
     except Exception as e:
         print("translate_batch crashed:", traceback.format_exc())
         return jsonify({"error": "translate_batch crashed", "detail": str(e)}), 500
+
 
 
